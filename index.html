@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF 2Files Mixer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    /* ── Themes ──────────────────────────────── */
+    [data-theme="dark"] {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --surf2:   #252836;
+      --border:  #2d3048;
+      --text:    #e8eaf6;
+      --muted:   #8892b0;
+      --shadow:  rgba(0,0,0,.6);
+      --invert:  0;
+    }
+    [data-theme="light"] {
+      --bg:      #f2f4f8;
+      --surface: #ffffff;
+      --surf2:   #eaecf4;
+      --border:  #d0d5e8;
+      --text:    #1a1c2e;
+      --muted:   #626882;
+      --shadow:  rgba(0,0,0,.18);
+      --invert:  1;
+    }
+    /* Auto follows OS preference */
+    @media (prefers-color-scheme: light) {
+      [data-theme="auto"] {
+        --bg:      #f2f4f8;
+        --surface: #ffffff;
+        --surf2:   #eaecf4;
+        --border:  #d0d5e8;
+        --text:    #1a1c2e;
+        --muted:   #626882;
+        --shadow:  rgba(0,0,0,.18);
+        --invert:  1;
+      }
+    }
+    @media (prefers-color-scheme: dark) {
+      [data-theme="auto"] {
+        --bg:      #0f1117;
+        --surface: #1a1d27;
+        --surf2:   #252836;
+        --border:  #2d3048;
+        --text:    #e8eaf6;
+        --muted:   #8892b0;
+        --shadow:  rgba(0,0,0,.6);
+        --invert:  0;
+      }
+    }
+
+    /* ── Base ────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { color-scheme: normal; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background .25s, color .25s;
+    }
+
+    /* ── Header ──────────────────────────────── */
+    header {
+      flex-shrink: 0;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background .25s, border-color .25s;
+    }
+    header h1 { font-size: 1.05rem; font-weight: 700; }
+    header p  { font-size: 0.75rem; color: var(--muted); margin-top: 1px; }
+    .header-spacer { flex: 1; }
+
+    /* ── Theme toggle ────────────────────────── */
+    .theme-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      transition: background .2s, border-color .2s, color .2s;
+      user-select: none;
+    }
+    .theme-btn:hover { border-color: var(--muted); color: var(--text); }
+    .theme-icon { font-size: 0.9rem; }
+
+    /* ── Hover-preview toggle ────────────────── */
+    .preview-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      transition: background .2s, border-color .2s, color .2s;
+      user-select: none;
+    }
+    .preview-toggle:hover { border-color: var(--muted); color: var(--text); }
+    .preview-toggle.active {
+      border-color: #4fc3f7;
+      color: #4fc3f7;
+      background: rgba(79,195,247,.08);
+    }
+
+    /* ── Workspace ───────────────────────────── */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 280px 1fr;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ── Panel shared ────────────────────────── */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+      transition: background .25s, border-color .25s;
+    }
+    .panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+
+    .panel-head {
+      flex-shrink: 0;
+      height: 36px;
+      padding: 0 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background .25s, border-color .25s;
+    }
+    .panel-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+    }
+    .panel-left   .panel-title { color: #4fc3f7; }
+    .panel-right  .panel-title { color: #f48fb1; }
+    .panel-center .panel-title { color: #81c784; }
+    .panel-sub { font-size: 0.72rem; color: var(--muted); margin-left: auto; }
+
+    /* ── Upload zone ─────────────────────────── */
+    .upload-zone {
+      flex-shrink: 0;
+      margin: 10px;
+      padding: 12px;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .panel-left  .upload-zone:hover,
+    .panel-left  .upload-zone.drag-active { border-color: #4fc3f7; background: rgba(79,195,247,.06); }
+    .panel-right .upload-zone:hover,
+    .panel-right .upload-zone.drag-active { border-color: #f48fb1; background: rgba(244,143,177,.06); }
+    .upload-zone.loaded { border-style: solid; }
+    .upload-zone svg { color: var(--muted); }
+    .upload-name { font-size: 0.76rem; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    input[type="file"] { display: none; }
+
+    /* ── Thumbnail grid ──────────────────────── */
+    .thumb-grid {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 8px 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      align-content: start;
+    }
+
+    .page-card {
+      cursor: pointer;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 2px solid transparent;
+      background: var(--surf2);
+      transition: border-color .15s, transform .12s, background .25s;
+      position: relative;
+    }
+    .page-card:hover { transform: scale(1.03); }
+    .panel-left  .page-card:hover { border-color: #4fc3f7; }
+    .panel-right .page-card:hover { border-color: #f48fb1; }
+    .page-card.selected { border-color: #81c784; }
+    .page-card img { width: 100%; height: auto; display: block; }
+    .card-label { padding: 3px 4px; font-size: 0.66rem; color: var(--muted); text-align: center; background: var(--surf2); }
+
+    .sel-badge {
+      position: absolute;
+      top: 4px; right: 4px;
+      background: #81c784;
+      color: #000;
+      border-radius: 50%;
+      width: 18px; height: 18px;
+      font-size: 0.6rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Page preview popup ──────────────────── */
+    #page-preview {
+      display: none;
+      position: fixed;
+      z-index: 999;
+      width: 300px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 12px 40px var(--shadow);
+      overflow: hidden;
+      pointer-events: none;
+      transition: background .25s, border-color .25s;
+    }
+    .preview-bar {
+      padding: 6px 10px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: var(--surf2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preview-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    #preview-img { width: 100%; height: auto; display: block; }
+
+    /* ── Center: zoom controls ───────────────── */
+    .zoom-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .zoom-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 3px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: color .15s;
+      user-select: none;
+    }
+    .zoom-btn:hover:not(:disabled) { color: var(--text); }
+    .zoom-btn:disabled { opacity: .25; cursor: default; }
+    .zoom-pct { font-size: 0.68rem; color: var(--muted); min-width: 30px; text-align: center; }
+
+    /* ── Center: sel-list & items ────────────── */
+    .sel-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    /* ── Row layout (zoom 1-2) ─── */
+    .sel-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 8px;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: grab;
+      transition: border-color .15s, opacity .15s, background .25s;
+      user-select: none;
+    }
+    .sel-item:hover { border-color: #81c784; }
+    .sel-item.dragging  { opacity: .4; }
+    .sel-item.drag-over { border-color: #81c784; border-style: dashed; }
+
+    .drag-grip { color: var(--muted); font-size: .9rem; flex-shrink: 0; }
+    .sel-item .thumb { height: auto; border-radius: 3px; flex-shrink: 0; display: block; object-fit: contain; }
+    .sel-meta  { flex: 1; min-width: 0; }
+    .sel-order { font-size: 0.66rem; color: var(--muted); }
+    .sel-src   { font-size: 0.78rem; font-weight: 600; }
+    .src-left  { color: #4fc3f7; }
+    .src-right { color: #f48fb1; }
+
+    /* ── Card layout (zoom 3-4) ─── */
+    .sel-item.card-layout {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 8px;
+      gap: 6px;
+    }
+    .sel-item.card-layout .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sel-item.card-layout .card-top .sel-src { font-size: 0.82rem; }
+    .sel-item.card-layout .card-top .sel-order { font-size: 0.7rem; }
+    .sel-item.card-layout .thumb { width: 100%; border-radius: 4px; }
+
+    .rm-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: .9rem;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color .15s, background .15s;
+    }
+    .rm-btn:hover { color: #ef5350; background: rgba(239,83,80,.12); }
+
+    .empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; height: 100%;
+      color: var(--muted); font-size: 0.82rem;
+      text-align: center; padding: 20px; opacity: .6;
+    }
+
+    /* ── Center footer ───────────────────────── */
+    .center-footer {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 7px;
+      transition: background .25s, border-color .25s;
+    }
+    .center-actions { display: flex; gap: 6px; }
+
+    .dl-btn {
+      flex: 1; padding: 9px;
+      background: #81c784; color: #000;
+      border: none; border-radius: 6px;
+      font-size: .85rem; font-weight: 700;
+      cursor: pointer; transition: filter .15s;
+    }
+    .dl-btn:hover:not(:disabled) { filter: brightness(1.1); }
+    .dl-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .clear-btn {
+      padding: 9px 12px;
+      background: none; border: 1px solid var(--border);
+      color: var(--muted); border-radius: 6px;
+      font-size: .82rem; cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .clear-btn:hover:not(:disabled) { border-color: #ef5350; color: #ef5350; }
+    .clear-btn:disabled { opacity: .3; cursor: not-allowed; }
+    .footer-note { font-size: 0.7rem; color: var(--muted); text-align: center; }
+
+    /* ── Rubber band ────────────────────────── */
+    #rubber-band {
+      display: none;
+      position: fixed;
+      z-index: 500;
+      border: 1.5px dashed #81c784;
+      background: rgba(129,199,132,.06);
+      pointer-events: none;
+      border-radius: 3px;
+    }
+
+    /* ── DnD active card ────────────────────── */
+    .page-card.dnd-active {
+      opacity: .6;
+      outline: 2px solid #81c784;
+      outline-offset: 2px;
+    }
+
+    /* ── Rubber-band selected card ──────────── */
+    .page-card.rubber-selected {
+      outline: 2px solid #81c784;
+      outline-offset: 2px;
+      background: rgba(129,199,132,.13);
+    }
+
+    /* ── Selection action bar ───────────────── */
+    #sel-action-bar {
+      display: none;
+      position: fixed;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 600;
+      align-items: center;
+      gap: 6px;
+    }
+    #rubber-insert-btn {
+      display: flex;
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 22px;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      box-shadow: 0 4px 24px rgba(0,0,0,.35);
+      align-items: center;
+      transition: background .15s;
+    }
+    #rubber-insert-btn:hover { background: #388e3c; }
+    #deselect-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px; height: 36px;
+      background: rgba(0,0,0,.45);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 24px rgba(0,0,0,.35);
+      transition: background .15s;
+    }
+    #deselect-btn:hover { background: rgba(0,0,0,.65); }
+
+    /* ── Insert indicator ───────────────────── */
+    #insert-indicator {
+      display: none;
+      position: fixed;
+      height: 2px;
+      background: #81c784;
+      border-radius: 1px;
+      pointer-events: none;
+      z-index: 500;
+      box-shadow: 0 0 6px rgba(129,199,132,.5);
+    }
+    #insert-indicator::before,
+    #insert-indicator::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #81c784;
+    }
+    #insert-indicator::before { left: -3px; }
+    #insert-indicator::after  { right: -3px; }
+
+    /* ── Scrollbar ───────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+    <rect x="1"   y="3"  width="9" height="12" rx="1.5" fill="#4fc3f7" opacity=".85"/>
+    <rect x="16"  y="3"  width="9" height="12" rx="1.5" fill="#f48fb1" opacity=".85"/>
+    <rect x="8.5" y="12" width="9" height="12" rx="1.5" fill="#81c784" opacity=".9"/>
+  </svg>
+  <div>
+    <h1>PDF 2Files Mixer</h1>
+    <p>2つのPDFからページを選んで並べ、1つのPDFとして書き出す</p>
+  </div>
+  <div class="header-spacer"></div>
+  <button class="preview-toggle" id="preview-toggle" onclick="toggleHoverPreview()">
+    <span>🔍</span>
+    <span id="preview-toggle-label">ホバープレビュー ON</span>
+  </button>
+  <button class="theme-btn" id="theme-btn" onclick="cycleTheme()">
+    <span class="theme-icon" id="theme-icon">🌙</span>
+    <span id="theme-label">ダーク</span>
+  </button>
+</header>
+
+<div class="workspace">
+
+  <!-- ── LEFT ──────────────────────────────── -->
+  <div class="panel panel-left">
+    <div class="panel-head">
+      <span class="panel-title">PDF 1</span>
+      <span class="panel-sub" id="left-sub"></span>
+    </div>
+    <label class="upload-zone" id="ul-left" for="f-left">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+      <span class="upload-name">クリック または ドロップ</span>
+      <input type="file" id="f-left" accept=".pdf">
+    </label>
+    <div class="thumb-grid" id="grid-left"></div>
+  </div>
+
+  <!-- ── CENTER ────────────────────────────── -->
+  <div class="panel panel-center">
+    <div class="panel-head">
+      <span class="panel-title">結合順序</span>
+      <div class="zoom-ctrl">
+        <button class="zoom-btn" id="zoom-out" onclick="changeZoom(-1)" disabled title="縮小">−</button>
+        <span class="zoom-pct" id="zoom-pct">小</span>
+        <button class="zoom-btn" id="zoom-in"  onclick="changeZoom(+1)"          title="拡大">＋</button>
+      </div>
+      <button class="zoom-btn" id="undo-btn" onclick="undo()" disabled title="元に戻す (⌘Z)">↩</button>
+      <span class="panel-sub" id="center-sub"></span>
+    </div>
+    <div class="sel-list" id="sel-list">
+      <div class="empty-state">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <p>左右のPDFから<br>ページをクリックして追加</p>
+      </div>
+    </div>
+    <div class="center-footer">
+      <div class="center-actions">
+        <button class="dl-btn"    id="dl-btn"    disabled onclick="downloadMerged()">PDFをダウンロード</button>
+        <button class="clear-btn" id="clear-btn" disabled onclick="clearAll()">全消去</button>
+      </div>
+      <div class="footer-note" id="footer-note">0 ページ選択中</div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT ─────────────────────────────── -->
+  <div class="panel panel-right">
+    <div class="panel-head">
+      <span class="panel-title">PDF 2</span>
+      <span class="panel-sub" id="right-sub"></span>
+    </div>
+    <label class="upload-zone" id="ul-right" for="f-right">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+      <span class="upload-name">クリック または ドロップ</span>
+      <input type="file" id="f-right" accept=".pdf">
+    </label>
+    <div class="thumb-grid" id="grid-right"></div>
+  </div>
+
+</div>
+
+<!-- ── Rubber band ──────────────────────────── -->
+<div id="rubber-band"></div>
+
+<!-- ── Insert indicator ────────────────────── -->
+<div id="insert-indicator"></div>
+
+<!-- ── Selection action bar ───────────────────── -->
+<div id="sel-action-bar">
+  <button id="rubber-insert-btn">
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M7.5 1.5v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M4.5 6.5L7.5 9.5l3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M2 13h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <span id="rubber-insert-count"></span>
+  </button>
+  <button id="deselect-btn" title="選択解除 (Esc)">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+  </button>
+</div>
+
+<!-- ── Page preview popup ──────────────────── -->
+<div id="page-preview">
+  <div class="preview-bar">
+    <span class="preview-dot" id="preview-dot"></span>
+    <span id="preview-label"></span>
+  </div>
+  <img id="preview-img" src="" alt="">
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  /* ── State ───────────────────────────────── */
+  const S = {
+    left:  null,   // { pdfBytes: Uint8Array, pdfDoc, pageCount }
+    right: null,
+    pages: [],     // { side, pageIndex, dataUrl }
+    zoom:  0,      // 0-3
+    hoverPreview: localStorage.getItem('pdf-mixer-hover') !== 'off',
+    history: []    // undo スタック（pages のスナップショット）
+  };
+
+  const ZOOM_LEVELS = [
+    { label: '小',   imgW: 50,   card: false },
+    { label: '中',   imgW: 100,  card: false },
+    { label: '大',   imgW: null, card: true  },
+    { label: '特大', imgW: null, card: true  },
+  ];
+
+  let dragSrcIdx = null;
+
+  /* ── Theme ───────────────────────────────── */
+  const THEMES = [
+    { key: 'dark',  icon: '🌙', label: 'ダーク'    },
+    { key: 'light', icon: '☀️', label: 'ライト'    },
+    { key: 'auto',  icon: '🖥', label: 'システム'  },
+  ];
+  let themeIdx = 0;
+
+  (function initTheme() {
+    const saved = localStorage.getItem('pdf-mixer-theme');
+    themeIdx = THEMES.findIndex(t => t.key === saved);
+    if (themeIdx < 0) themeIdx = 0;
+    applyTheme();
+  })();
+
+  function applyTheme() {
+    const t = THEMES[themeIdx];
+    document.documentElement.dataset.theme = t.key;
+    document.getElementById('theme-icon').textContent  = t.icon;
+    document.getElementById('theme-label').textContent = t.label;
+    localStorage.setItem('pdf-mixer-theme', t.key);
+  }
+
+  function cycleTheme() {
+    themeIdx = (themeIdx + 1) % THEMES.length;
+    applyTheme();
+  }
+
+  /* ── Zoom ────────────────────────────────── */
+  function changeZoom(delta) {
+    S.zoom = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, S.zoom + delta));
+    document.getElementById('zoom-pct').textContent = ZOOM_LEVELS[S.zoom].label;
+    document.getElementById('zoom-out').disabled = S.zoom === 0;
+    document.getElementById('zoom-in').disabled  = S.zoom === ZOOM_LEVELS.length - 1;
+    renderList();
+  }
+
+  /* ── Undo ───────────────────────────────── */
+  function pushHistory() {
+    S.history.push(S.pages.map(p => ({ ...p })));
+    if (S.history.length > 50) S.history.shift();
+    document.getElementById('undo-btn').disabled = false;
+  }
+
+  function undo() {
+    if (!S.history.length) return;
+    S.pages = S.history.pop();
+    refreshBadges();
+    renderList();
+    document.getElementById('undo-btn').disabled = S.history.length === 0;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      clearRubberPending();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+    }
+  });
+
+  /* ── Long press → DnD / Rubber band selection ── */
+  let holdTimer      = null;
+  let dndMode        = false;
+  let dndOrigin      = null;   // { side, pageIdx, dataUrl }
+  let dndSourceCard  = null;
+  let pendingClick   = null;   // set on mousedown, cleared on mouseup
+  let pointerDownPos = { x: 0, y: 0 };
+  let pointerMoved   = false;
+  let pendingInsertIdx = 0;
+
+  let rubberBanding     = false;
+  let rubberStart       = { x: 0, y: 0 };
+  let rubberSessionKeys = new Set();
+  let rubberPendingPages = [];
+
+  function addToRubberBand(side, pageIdx, dataUrl) {
+    const key = `${side}|${pageIdx}`;
+    if (rubberSessionKeys.has(key)) return;
+    rubberSessionKeys.add(key);
+    rubberPendingPages.push({ side, pageIndex: pageIdx, dataUrl });
+    const card = document.getElementById(`card-${side}-${pageIdx}`);
+    if (card) card.classList.add('rubber-selected');
+  }
+
+  function clearRubberPending() {
+    document.querySelectorAll('.page-card.rubber-selected').forEach(c => c.classList.remove('rubber-selected'));
+    rubberPendingPages = [];
+    rubberSessionKeys = new Set();
+    document.getElementById('sel-action-bar').style.display = 'none';
+  }
+
+  function showRubberInsertBtn() {
+    document.getElementById('rubber-insert-count').textContent = `${rubberPendingPages.length}ページを挿入`;
+    document.getElementById('sel-action-bar').style.display = 'flex';
+  }
+
+  function getInsertionIndex(clientY) {
+    const items = [...document.querySelectorAll('#sel-list .sel-item')];
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i].getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) return i;
+    }
+    return items.length;
+  }
+
+  function showInsertionIndicator(idx) {
+    const ind   = document.getElementById('insert-indicator');
+    const items = [...document.querySelectorAll('#sel-list .sel-item')];
+    const listR = document.getElementById('sel-list').getBoundingClientRect();
+    let top;
+    if (items.length === 0)       top = listR.top + 8;
+    else if (idx >= items.length) top = items[items.length - 1].getBoundingClientRect().bottom + 3;
+    else                          top = items[idx].getBoundingClientRect().top - 3;
+    ind.style.display = 'block';
+    ind.style.top     = `${top}px`;
+    ind.style.left    = `${listR.left + 8}px`;
+    ind.style.width   = `${listR.width - 16}px`;
+  }
+
+  function hideInsertionIndicator() {
+    document.getElementById('insert-indicator').style.display = 'none';
+  }
+
+  function updateRubberBand(x2, y2) {
+    const rb = document.getElementById('rubber-band');
+    rb.style.display = 'block';
+    rb.style.left    = `${Math.min(x2, rubberStart.x)}px`;
+    rb.style.top     = `${Math.min(y2, rubberStart.y)}px`;
+    rb.style.width   = `${Math.abs(x2 - rubberStart.x)}px`;
+    rb.style.height  = `${Math.abs(y2 - rubberStart.y)}px`;
+  }
+
+  function hideRubberBand() {
+    document.getElementById('rubber-band').style.display = 'none';
+  }
+
+  document.addEventListener('mousemove', e => {
+    // Track if pointer moved significantly from mousedown position
+    if (pendingClick || holdTimer) {
+      const dx = e.clientX - pointerDownPos.x;
+      const dy = e.clientY - pointerDownPos.y;
+      if (dx*dx + dy*dy > 25) { // 5px threshold
+        pointerMoved = true;
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+          const origin = pendingClick;
+          pendingClick = null;
+          // 素早くドラッグ → カード位置からラバーバンド開始
+          rubberBanding = true;
+          rubberStart   = { ...pointerDownPos };
+          if (origin) addToRubberBand(origin.side, origin.pageIdx, origin.dataUrl);
+        }
+      }
+    }
+
+    if (dndMode) {
+      e.preventDefault();
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const sl = document.getElementById('sel-list');
+      if (el && (el === sl || sl.contains(el))) {
+        pendingInsertIdx = getInsertionIndex(e.clientY);
+        showInsertionIndicator(pendingInsertIdx);
+      } else {
+        hideInsertionIndicator();
+      }
+    }
+
+    if (rubberBanding) {
+      e.preventDefault();
+      updateRubberBand(e.clientX, e.clientY);
+      const left   = Math.min(e.clientX, rubberStart.x);
+      const top    = Math.min(e.clientY, rubberStart.y);
+      const right  = Math.max(e.clientX, rubberStart.x);
+      const bottom = Math.max(e.clientY, rubberStart.y);
+      document.querySelectorAll('.page-card').forEach(card => {
+        const r = card.getBoundingClientRect();
+        if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) {
+          const [, cs, pi] = card.id.split('-');
+          addToRubberBand(cs, parseInt(pi), card.querySelector('img').src);
+        }
+      });
+    }
+  });
+
+  document.addEventListener('mouseup', e => {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+
+    // Single click: toggle selection
+    if (pendingClick && !pointerMoved) {
+      const { side, pageIdx, dataUrl } = pendingClick;
+      const key = `${side}|${pageIdx}`;
+      if (rubberSessionKeys.has(key)) {
+        // Deselect
+        rubberPendingPages = rubberPendingPages.filter(p => !(p.side === side && p.pageIndex === pageIdx));
+        rubberSessionKeys.delete(key);
+        const card = document.getElementById(`card-${side}-${pageIdx}`);
+        if (card) card.classList.remove('rubber-selected');
+      } else {
+        addToRubberBand(side, pageIdx, dataUrl);
+      }
+      if (rubberPendingPages.length > 0) showRubberInsertBtn();
+      else document.getElementById('sel-action-bar').style.display = 'none';
+    }
+    pendingClick = null;
+
+    // DnD drop in center list → insert at position
+    if (dndMode) {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const sl = document.getElementById('sel-list');
+      if (el && (el === sl || sl.contains(el))) {
+        pushHistory();
+        S.pages.splice(pendingInsertIdx, 0, {
+          side: dndOrigin.side, pageIndex: dndOrigin.pageIdx, dataUrl: dndOrigin.dataUrl,
+        });
+        refreshBadges();
+        renderList();
+      }
+      if (dndSourceCard) { dndSourceCard.classList.remove('dnd-active'); dndSourceCard = null; }
+      hideInsertionIndicator();
+      dndMode = false; dndOrigin = null;
+    }
+
+    // Rubber band end
+    if (rubberBanding) {
+      hideRubberBand();
+      rubberBanding = false;
+      // Re-sync rubberSessionKeys so future rubber bands don't duplicate already-selected cards
+      rubberSessionKeys = new Set(rubberPendingPages.map(p => `${p.side}|${p.pageIndex}`));
+      if (rubberPendingPages.length > 0) showRubberInsertBtn();
+    }
+
+    pointerMoved = false;
+  });
+
+  /* ── Selection action bar ───────────────── */
+  document.getElementById('deselect-btn').addEventListener('click', () => {
+    clearRubberPending();
+  });
+
+  document.getElementById('rubber-insert-btn').addEventListener('click', () => {
+    if (rubberPendingPages.length === 0) return;
+    pushHistory();
+    rubberPendingPages.forEach(p => S.pages.push(p));
+    clearRubberPending();
+    refreshBadges();
+    renderList();
+  });
+
+  /* ── Hover-preview toggle ────────────────── */
+  (function initHoverToggle() {
+    const btn = document.getElementById('preview-toggle');
+    const lbl = document.getElementById('preview-toggle-label');
+    if (S.hoverPreview) { btn.classList.add('active'); lbl.textContent = 'ホバープレビュー ON'; }
+    else                { btn.classList.remove('active'); lbl.textContent = 'ホバープレビュー OFF'; }
+  })();
+
+  function toggleHoverPreview() {
+    S.hoverPreview = !S.hoverPreview;
+    localStorage.setItem('pdf-mixer-hover', S.hoverPreview ? 'on' : 'off');
+    const btn = document.getElementById('preview-toggle');
+    const lbl = document.getElementById('preview-toggle-label');
+    if (S.hoverPreview) { btn.classList.add('active'); lbl.textContent = 'ホバープレビュー ON'; }
+    else                { btn.classList.remove('active'); lbl.textContent = 'ホバープレビュー OFF'; hidePreview(); }
+  }
+
+  /* ── Preview popup ───────────────────────── */
+  const preview    = document.getElementById('page-preview');
+  const previewImg = document.getElementById('preview-img');
+  const previewLbl = document.getElementById('preview-label');
+  const previewDot = document.getElementById('preview-dot');
+
+  function showPreview(card, side, pageNum, dataUrl) {
+    if (!S.hoverPreview) return;
+    previewImg.src = dataUrl;
+    previewLbl.textContent = `${side === 'left' ? 'PDF 1' : 'PDF 2'}  ·  p.${pageNum}`;
+    previewDot.style.background = side === 'left' ? '#4fc3f7' : '#f48fb1';
+    preview.style.display = 'block';
+
+    const POPUP_W = 300;
+    const rect = card.getBoundingClientRect();
+    // 右側に置けるならそこへ、はみ出るなら左へ
+    let left = rect.right + 10;
+    if (left + POPUP_W > window.innerWidth - 4) left = rect.left - POPUP_W - 10;
+    if (left < 4) left = rect.right + 10;
+    let top = rect.top;
+    const popH = preview.offsetHeight;
+    if (top + popH > window.innerHeight - 8) top = window.innerHeight - popH - 8;
+    preview.style.left = `${Math.max(4, left)}px`;
+    preview.style.top  = `${Math.max(4, top)}px`;
+  }
+  function hidePreview() { preview.style.display = 'none'; }
+
+  /* ── File inputs (click) ─────────────────── */
+  document.getElementById('f-left').addEventListener('change',  e => e.target.files[0] && loadPDF(e.target.files[0], 'left'));
+  document.getElementById('f-right').addEventListener('change', e => e.target.files[0] && loadPDF(e.target.files[0], 'right'));
+
+  /* ── Drag-and-drop on upload zones ──────── */
+  ['left', 'right'].forEach(side => {
+    const zone = document.getElementById(`ul-${side}`);
+    zone.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-active'); });
+    zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-active'); });
+    zone.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation();
+      zone.classList.remove('drag-active');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') loadPDF(file, side);
+    });
+  });
+
+  /* ── Rubber band start (empty area in grid) ── */
+  ['left', 'right'].forEach(side => {
+    document.getElementById(`grid-${side}`).addEventListener('mousedown', e => {
+      if (e.target.closest('.page-card')) return;
+      e.preventDefault();
+      rubberBanding = true;
+      rubberStart   = { x: e.clientX, y: e.clientY };
+    });
+  });
+
+  /* ── Load PDF ────────────────────────────── */
+  async function loadPDF(file, side) {
+    const zone   = document.getElementById(`ul-${side}`);
+    const nameEl = zone.querySelector('.upload-name');
+    nameEl.textContent = '読み込み中...';
+
+    try {
+      const ab = await file.arrayBuffer();
+      // Keep independent copy for pdf-lib (PDF.js may transfer the buffer)
+      const pdfBytesForLib = new Uint8Array(ab.slice(0));
+      const pdfBytesForJs  = new Uint8Array(ab);
+
+      const pdfDoc = await pdfjsLib.getDocument({ data: pdfBytesForJs }).promise;
+      S[side] = { pdfBytes: pdfBytesForLib, pdfDoc, pageCount: pdfDoc.numPages };
+
+      nameEl.textContent = file.name;
+      zone.classList.add('loaded');
+      document.getElementById(`${side}-sub`).textContent = `${pdfDoc.numPages}p`;
+
+      await renderGrid(pdfDoc, side);
+    } catch (err) {
+      nameEl.textContent = 'エラー: 読み込み失敗';
+      console.error(err);
+    }
+  }
+
+  /* ── Render thumbnail grid ───────────────── */
+  async function renderGrid(pdfDoc, side) {
+    const grid = document.getElementById(`grid-${side}`);
+    grid.innerHTML = '';
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page     = await pdfDoc.getPage(i);
+      const vp0      = page.getViewport({ scale: 1 });
+      const scale    = 500 / vp0.width;
+      const viewport = page.getViewport({ scale });
+
+      const canvas   = document.createElement('canvas');
+      canvas.width   = viewport.width;
+      canvas.height  = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      const pageIdx = i - 1;
+
+      const card = document.createElement('div');
+      card.className        = 'page-card';
+      card.id               = `card-${side}-${pageIdx}`;
+
+      const img = document.createElement('img');
+      img.src     = dataUrl;
+      img.loading = 'lazy';
+      card.appendChild(img);
+
+      const lbl = document.createElement('div');
+      lbl.className   = 'card-label';
+      lbl.textContent = `p.${i}`;
+      card.appendChild(lbl);
+
+      card.addEventListener('mousedown', e => {
+        e.preventDefault();
+        pointerDownPos = { x: e.clientX, y: e.clientY };
+        pointerMoved   = false;
+        pendingClick   = { side, pageIdx, dataUrl };
+        holdTimer = setTimeout(() => {
+          holdTimer = null;
+          if (!pointerMoved) {
+            dndMode = true; dndOrigin = pendingClick; dndSourceCard = card;
+            pendingClick = null;
+            card.classList.add('dnd-active');
+          }
+        }, 350);
+      });
+      card.addEventListener('mouseenter', () => {
+        if (!rubberBanding && !dndMode && !pendingClick) showPreview(card, side, i, dataUrl);
+      });
+      card.addEventListener('mouseleave', hidePreview);
+
+      grid.appendChild(card);
+    }
+  }
+
+  /* ── Selection ───────────────────────────── */
+  function removePage(idx) {
+    pushHistory();
+    S.pages.splice(idx, 1);
+    refreshBadges();
+    renderList();
+  }
+
+  function clearAll() {
+    pushHistory();
+    S.pages = [];
+    refreshBadges();
+    renderList();
+  }
+
+  function refreshBadges() {
+    document.querySelectorAll('.page-card').forEach(c => {
+      c.classList.remove('selected');
+      c.querySelector('.sel-badge')?.remove();
+    });
+    const counts = {};
+    S.pages.forEach((p, i) => {
+      const key = `${p.side}|${p.pageIndex}`;
+      (counts[key] = counts[key] || []).push(i + 1);
+    });
+    Object.entries(counts).forEach(([key, positions]) => {
+      const [side, pageIndex] = key.split('|');
+      const card = document.getElementById(`card-${side}-${pageIndex}`);
+      if (!card) return;
+      card.classList.add('selected');
+      const badge = document.createElement('div');
+      badge.className   = 'sel-badge';
+      badge.textContent = positions.length > 1 ? String(positions.length) : '✓';
+      card.appendChild(badge);
+    });
+  }
+
+  /* ── Render center list ──────────────────── */
+  function renderList() {
+    const list  = document.getElementById('sel-list');
+    const count = S.pages.length;
+    const zCfg  = ZOOM_LEVELS[S.zoom];
+
+    document.getElementById('footer-note').textContent  = `${count} ページ選択中`;
+    document.getElementById('dl-btn').disabled    = count === 0;
+    document.getElementById('clear-btn').disabled = count === 0;
+    document.getElementById('center-sub').textContent   = count ? `${count}p` : '';
+
+    if (count === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <p>左右のPDFから<br>ページをクリックして追加</p>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = '';
+
+    S.pages.forEach((p, i) => {
+      const item = document.createElement('div');
+      item.className = 'sel-item' + (zCfg.card ? ' card-layout' : '');
+      item.draggable = true;
+
+      const srcClass = p.side === 'left' ? 'src-left' : 'src-right';
+      const srcLabel = p.side === 'left' ? 'PDF 1' : 'PDF 2';
+      const imgStyle = zCfg.imgW ? `width:${zCfg.imgW}px;` : '';
+
+      if (zCfg.card) {
+        // Card layout: image full-width, info above
+        item.innerHTML = `
+          <div class="card-top">
+            <span class="sel-src ${srcClass}">${srcLabel} · p.${p.pageIndex + 1}</span>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <span class="sel-order">${i + 1}番目</span>
+              <button class="rm-btn" title="削除">✕</button>
+            </div>
+          </div>
+          <img class="thumb" src="${p.dataUrl}" alt="" style="${imgStyle}">`;
+      } else {
+        // Row layout: grip + small/medium image + meta
+        item.innerHTML = `
+          <span class="drag-grip">⠿</span>
+          <img class="thumb" src="${p.dataUrl}" alt="" style="${imgStyle}">
+          <div class="sel-meta">
+            <div class="sel-order">${i + 1}番目</div>
+            <div class="sel-src ${srcClass}">${srcLabel} · p.${p.pageIndex + 1}</div>
+          </div>
+          <button class="rm-btn" title="削除">✕</button>`;
+      }
+
+      item.querySelector('.rm-btn').addEventListener('click', () => removePage(i));
+
+      item.addEventListener('mouseenter', () => showPreview(item, p.side, p.pageIndex + 1, p.dataUrl));
+      item.addEventListener('mouseleave', hidePreview);
+
+      // Drag-and-drop reorder
+      item.addEventListener('dragstart', e => {
+        dragSrcIdx = i;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+      item.addEventListener('dragover', e => {
+        e.preventDefault();
+        list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        item.classList.add('drag-over');
+      });
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        if (dragSrcIdx !== null && dragSrcIdx !== i) {
+          pushHistory();
+          const [moved] = S.pages.splice(dragSrcIdx, 1);
+          S.pages.splice(i, 0, moved);
+          dragSrcIdx = null;
+          refreshBadges();
+          renderList();
+        }
+      });
+
+      list.appendChild(item);
+    });
+  }
+
+  /* ── Download merged PDF ─────────────────── */
+  async function downloadMerged() {
+    const btn = document.getElementById('dl-btn');
+    btn.disabled = true;
+    btn.textContent = '生成中...';
+
+    try {
+      const { PDFDocument } = PDFLib;
+      const merged = await PDFDocument.create();
+
+      let leftDoc = null, rightDoc = null;
+      if (S.left  && S.pages.some(p => p.side === 'left'))
+        leftDoc  = await PDFDocument.load(S.left.pdfBytes,  { ignoreEncryption: true });
+      if (S.right && S.pages.some(p => p.side === 'right'))
+        rightDoc = await PDFDocument.load(S.right.pdfBytes, { ignoreEncryption: true });
+
+      for (const p of S.pages) {
+        const src = p.side === 'left' ? leftDoc : rightDoc;
+        const [cp] = await merged.copyPages(src, [p.pageIndex]);
+        merged.addPage(cp);
+      }
+
+      const outBytes = await merged.save();
+      const url = URL.createObjectURL(new Blob([outBytes], { type: 'application/pdf' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: 'merged.pdf' });
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('PDFの生成中にエラーが発生しました:\n' + err.message);
+      console.error(err);
+    } finally {
+      btn.textContent = 'PDFをダウンロード';
+      btn.disabled = S.pages.length === 0;
+    }
+  }
+</script>
+</body>
+</html>
