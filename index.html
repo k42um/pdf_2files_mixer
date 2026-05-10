@@ -220,13 +220,22 @@
     .page-card img { width: 100%; height: auto; display: block; }
     .card-label { padding: 3px 4px; font-size: 0.66rem; color: var(--muted); text-align: center; background: var(--surf2); }
 
-    .sel-badge {
+    .sel-badges {
       position: absolute;
       top: 4px; right: 4px;
+      display: flex;
+      flex-direction: row;
+      gap: 2px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      max-width: calc(100% - 8px);
+    }
+    .sel-badge {
       background: #81c784;
       color: #000;
-      border-radius: 50%;
-      width: 18px; height: 18px;
+      border-radius: 9px;
+      min-width: 18px; height: 18px;
+      padding: 0 4px;
       font-size: 0.6rem; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
     }
@@ -1054,22 +1063,27 @@
   function refreshBadges() {
     document.querySelectorAll('.page-card').forEach(c => {
       c.classList.remove('selected');
-      c.querySelector('.sel-badge')?.remove();
+      c.querySelector('.sel-badges')?.remove();
     });
-    const counts = {};
+    const posMap = {};
     S.pages.forEach((p, i) => {
       const key = `${p.side}|${p.pageIndex}`;
-      (counts[key] = counts[key] || []).push(i + 1);
+      (posMap[key] = posMap[key] || []).push(i + 1);
     });
-    Object.entries(counts).forEach(([key, positions]) => {
+    Object.entries(posMap).forEach(([key, posList]) => {
       const [side, pageIndex] = key.split('|');
       const card = document.getElementById(`card-${side}-${pageIndex}`);
       if (!card) return;
       card.classList.add('selected');
-      const badge = document.createElement('div');
-      badge.className   = 'sel-badge';
-      badge.textContent = positions.length > 1 ? String(positions.length) : '✓';
-      card.appendChild(badge);
+      const container = document.createElement('div');
+      container.className = 'sel-badges';
+      posList.forEach(pos => {
+        const badge = document.createElement('div');
+        badge.className   = 'sel-badge';
+        badge.textContent = String(pos);
+        container.appendChild(badge);
+      });
+      card.appendChild(container);
     });
   }
 
